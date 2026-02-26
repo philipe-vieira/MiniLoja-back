@@ -67,11 +67,127 @@ describe('CategoryModule (e2e)', () => {
       .get('/category')
       .expect(200)
       .expect(({ body }) => {
-        expect(body).toHaveLength(1);
-        expect(body[0]).toMatchObject({
+        expect(body.data).toHaveLength(1);
+        expect(body.data[0]).toMatchObject({
           id: categoryId,
           name: 'Electronics',
         });
+        expect(body.meta).toMatchObject({
+          page: 1,
+          limit: 10,
+          total: 1,
+          totalPages: 1,
+          hasPreviousPage: false,
+          hasNextPage: false,
+          getAll: false,
+          sortBy: 'id:asc',
+        });
+      });
+  });
+
+  it('GET /category should apply pagination and name filter', async () => {
+    await createCategory('Electronics');
+    await createCategory('Electrodomésticos');
+    await createCategory('Books');
+
+    await request(app.getHttpServer())
+      .get('/category')
+      .query({ page: 1, limit: 1, name: 'elect' })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data).toHaveLength(1);
+        expect(body.data[0].name.toLowerCase()).toContain('elect');
+        expect(body.meta).toMatchObject({
+          page: 1,
+          limit: 1,
+          total: 2,
+          totalPages: 2,
+          hasPreviousPage: false,
+          hasNextPage: true,
+          getAll: false,
+          sortBy: 'id:asc',
+        });
+      });
+  });
+
+  it('GET /category should return all data when get_all=true', async () => {
+    await createCategory('A');
+    await createCategory('B');
+    await createCategory('C');
+
+    await request(app.getHttpServer())
+      .get('/category')
+      .query({ get_all: 'true' })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data).toHaveLength(3);
+        expect(body.meta).toMatchObject({
+          page: 1,
+          total: 3,
+          totalPages: 1,
+          hasPreviousPage: false,
+          hasNextPage: false,
+          getAll: true,
+          sortBy: 'id:asc',
+        });
+      });
+  });
+
+  it('GET /category should sort data with sort_by', async () => {
+    await createCategory('Apple');
+    await createCategory('Zebra');
+    await createCategory('Monkey');
+
+    await request(app.getHttpServer())
+      .get('/category')
+      .query({ sort_by: 'name:desc', get_all: 'true' })
+      .expect(200)
+      .expect(({ body }) => {
+        const names = body.data.map((item: { name: string }) => item.name);
+        expect(names).toEqual(['Zebra', 'Monkey', 'Apple']);
+        expect(body.meta.sortBy).toBe('name:desc');
+      });
+  });
+
+  it('GET /category should filter using createdAt_between', async () => {
+    const createdResponse = await request(app.getHttpServer())
+      .post('/category')
+      .send({ name: 'Electronics' })
+      .expect(201);
+
+    const createdAt = new Date(createdResponse.body.createdAt).getTime();
+    const start = new Date(createdAt - 1000).toISOString();
+    const end = new Date(createdAt + 1000).toISOString();
+
+    await request(app.getHttpServer())
+      .get('/category')
+      .query({ createdAt_between: `${start},${end}` })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data).toHaveLength(1);
+        expect(body.data[0].id).toBe(createdResponse.body.id);
+      });
+  });
+
+  it('GET /category should return 400 when page is invalid', () => {
+    return request(app.getHttpServer())
+      .get('/category')
+      .query({ page: 0 })
+      .expect(400)
+      .expect(({ body }) => {
+        expect(body.message).toBe('page must be a positive integer');
+      });
+  });
+
+  it('GET /category should return 400 when sort_by is invalid', () => {
+    return request(app.getHttpServer())
+      .get('/category')
+      .query({ sort_by: 'price:asc' })
+      .expect(400)
+      .expect(({ body }) => {
+        expect(body.message).toBe(
+          'sort_by field must be one of: id,name,createdAt,updatedAt',
+        );
       });
   });
 
@@ -160,6 +276,23 @@ describe('CategoryModule (e2e)', () => {
   });
 
   it('GET /category should return empty list when no categories exist', () => {
-    return request(app.getHttpServer()).get('/category').expect(200).expect([]);
+    return request(app.getHttpServer())
+      .get('/category')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toEqual({
+          data: [],
+          meta: {
+            page: 1,
+            limit: 10,
+            total: 0,
+            totalPages: 0,
+            hasPreviousPage: false,
+            hasNextPage: false,
+            getAll: false,
+            sortBy: 'id:asc',
+          },
+        });
+      });
   });
 });

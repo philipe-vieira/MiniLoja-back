@@ -11,6 +11,7 @@ describe('CategoryService', () => {
     const mockCategoryRepository = {
       create: jest.fn(),
       findAll: jest.fn(),
+      count: jest.fn(),
       findById: jest.fn(),
       update: jest.fn(),
       remove: jest.fn(),
@@ -56,7 +57,7 @@ describe('CategoryService', () => {
     expect(categoryRepository.create).not.toHaveBeenCalled();
   });
 
-  it('should return all categories', async () => {
+  it('should return paginated categories with default values', async () => {
     const categories = [
       {
         id: 1,
@@ -67,11 +68,171 @@ describe('CategoryService', () => {
       { id: 2, name: 'Books', createdAt: new Date(), updatedAt: new Date() },
     ];
     categoryRepository.findAll.mockResolvedValue(categories);
+    categoryRepository.count.mockResolvedValue(2);
 
-    const result = await service.findAll();
+    const result = await service.findAll({});
 
-    expect(categoryRepository.findAll).toHaveBeenCalledTimes(1);
-    expect(result).toEqual(categories);
+    expect(categoryRepository.findAll).toHaveBeenCalledWith({
+      skip: 0,
+      take: 10,
+      filters: {},
+      sort: { field: 'id', direction: 'asc' },
+    });
+    expect(categoryRepository.count).toHaveBeenCalledWith({});
+    expect(result).toEqual({
+      data: categories,
+      meta: {
+        page: 1,
+        limit: 10,
+        total: 2,
+        totalPages: 1,
+        hasPreviousPage: false,
+        hasNextPage: false,
+        getAll: false,
+        sortBy: 'id:asc',
+      },
+    });
+  });
+
+  it('should apply pagination and filters when listing categories', async () => {
+    const categories = [
+      {
+        id: 8,
+        name: 'Electronics',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+    categoryRepository.findAll.mockResolvedValue(categories);
+    categoryRepository.count.mockResolvedValue(21);
+
+    const result = await service.findAll({
+      page: '2',
+      limit: '10',
+      name: 'Elect',
+      id: '8',
+    });
+
+    expect(categoryRepository.findAll).toHaveBeenCalledWith({
+      skip: 10,
+      take: 10,
+      filters: { id: 8, name: 'Elect' },
+      sort: { field: 'id', direction: 'asc' },
+    });
+    expect(categoryRepository.count).toHaveBeenCalledWith({
+      id: 8,
+      name: 'Elect',
+    });
+    expect(result.meta).toMatchObject({
+      page: 2,
+      limit: 10,
+      total: 21,
+      totalPages: 3,
+      hasPreviousPage: true,
+      hasNextPage: true,
+      getAll: false,
+      sortBy: 'id:asc',
+    });
+  });
+
+  it('should apply get_all and custom sort', async () => {
+    const categories = [
+      { id: 2, name: 'B', createdAt: new Date(), updatedAt: new Date() },
+      { id: 1, name: 'A', createdAt: new Date(), updatedAt: new Date() },
+    ];
+    categoryRepository.findAll.mockResolvedValue(categories);
+    categoryRepository.count.mockResolvedValue(2);
+
+    const result = await service.findAll({
+      get_all: 'true',
+      sort_by: 'name:desc',
+    });
+
+    expect(categoryRepository.findAll).toHaveBeenCalledWith({
+      skip: undefined,
+      take: undefined,
+      filters: {},
+      sort: { field: 'name', direction: 'desc' },
+    });
+    expect(result.meta).toMatchObject({
+      page: 1,
+      limit: 2,
+      total: 2,
+      totalPages: 1,
+      hasPreviousPage: false,
+      hasNextPage: false,
+      getAll: true,
+      sortBy: 'name:desc',
+    });
+  });
+
+  it('should apply createdAt and updatedAt date filters', async () => {
+    categoryRepository.findAll.mockResolvedValue([]);
+    categoryRepository.count.mockResolvedValue(0);
+
+    await service.findAll({
+      createdAt_gte: '2026-02-01T00:00:00.000Z',
+      createdAt_lte: '2026-02-28T23:59:59.999Z',
+      updatedAt_between: '2026-02-01T00:00:00.000Z,2026-02-28T23:59:59.999Z',
+    });
+
+    expect(categoryRepository.findAll).toHaveBeenCalledWith({
+      skip: 0,
+      take: 10,
+      filters: {
+        createdAt: {
+          gte: new Date('2026-02-01T00:00:00.000Z'),
+          lte: new Date('2026-02-28T23:59:59.999Z'),
+        },
+        updatedAt: {
+          gte: new Date('2026-02-01T00:00:00.000Z'),
+          lte: new Date('2026-02-28T23:59:59.999Z'),
+        },
+      },
+      sort: { field: 'id', direction: 'asc' },
+    });
+  });
+
+  it('should throw BadRequestException when pagination params are invalid', async () => {
+    await expect(service.findAll({ page: '0' })).rejects.toThrow(
+      BadRequestException,
+    );
+    await expect(service.findAll({ limit: '-1' })).rejects.toThrow(
+      'limit must be a positive integer',
+    );
+    await expect(service.findAll({ limit: '101' })).rejects.toThrow(
+      'limit must be <= 100',
+    );
+    await expect(service.findAll({ id: 'abc' })).rejects.toThrow(
+      'id must be a positive integer',
+    );
+    await expect(service.findAll({ name: '   ' })).rejects.toThrow(
+      'name filter cannot be empty',
+    );
+    await expect(service.findAll({ get_all: 'nope' })).rejects.toThrow(
+      'get_all must be a boolean',
+    );
+    await expect(service.findAll({ sort_by: 'price:asc' })).rejects.toThrow(
+      'sort_by field must be one of: id,name,createdAt,updatedAt',
+    );
+    await expect(service.findAll({ sort_by: 'name:up' })).rejects.toThrow(
+      'sort_by direction must be asc or desc',
+    );
+    await expect(
+      service.findAll({ createdAt_between: '2026-02-01T00:00:00.000Z' }),
+    ).rejects.toThrow('createdAt_between must be in format start,end');
+    await expect(
+      service.findAll({
+        createdAt_between: '2026-02-10T00:00:00.000Z,2026-02-01T00:00:00.000Z',
+      }),
+    ).rejects.toThrow('createdAt_between start must be <= end');
+    await expect(
+      service.findAll({
+        updatedAt_between: '2026-02-01T00:00:00.000Z,2026-02-10T00:00:00.000Z',
+        updatedAt_gte: '2026-02-01T00:00:00.000Z',
+      }),
+    ).rejects.toThrow('updatedAt between cannot be combined with gte/lte');
+    expect(categoryRepository.findAll).not.toHaveBeenCalled();
   });
 
   it('should return one category by id', async () => {

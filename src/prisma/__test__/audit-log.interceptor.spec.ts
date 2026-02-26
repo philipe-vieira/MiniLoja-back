@@ -20,9 +20,9 @@ describe('AuditLogInterceptor', () => {
     const context = { getType: () => 'rpc' } as unknown as ExecutionContext;
     const next: CallHandler = { handle: () => of('ok') };
 
-    await expect(lastValueFrom(interceptor.intercept(context, next))).resolves.toBe(
-      'ok',
-    );
+    await expect(
+      lastValueFrom(interceptor.intercept(context, next)),
+    ).resolves.toBe('ok');
     expect(auditContextService.run).not.toHaveBeenCalled();
   });
 
@@ -46,9 +46,9 @@ describe('AuditLogInterceptor', () => {
     } as unknown as ExecutionContext;
     const next: CallHandler = { handle: () => of('ok') };
 
-    await expect(lastValueFrom(interceptor.intercept(context, next))).resolves.toBe(
-      'ok',
-    );
+    await expect(
+      lastValueFrom(interceptor.intercept(context, next)),
+    ).resolves.toBe('ok');
 
     expect(auditContextService.run).toHaveBeenCalledWith(
       expect.objectContaining({

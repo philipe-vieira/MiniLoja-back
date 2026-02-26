@@ -8,6 +8,7 @@ describe('CategoryRepository', () => {
     category: {
       create: jest.Mock;
       findMany: jest.Mock;
+      count: jest.Mock;
       findUnique: jest.Mock;
       update: jest.Mock;
       delete: jest.Mock;
@@ -19,6 +20,7 @@ describe('CategoryRepository', () => {
       category: {
         create: jest.fn(),
         findMany: jest.fn(),
+        count: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
         delete: jest.fn(),
@@ -63,12 +65,74 @@ describe('CategoryRepository', () => {
     ];
     prismaService.category.findMany.mockResolvedValue(categories);
 
-    const result = await repository.findAll();
+    const result = await repository.findAll({
+      skip: 10,
+      take: 5,
+      filters: { id: 2, name: 'game' },
+      sort: { field: 'id', direction: 'asc' },
+    });
 
     expect(prismaService.category.findMany).toHaveBeenCalledWith({
+      where: {
+        id: 2,
+        name: {
+          contains: 'game',
+          mode: 'insensitive',
+        },
+      },
+      skip: 10,
+      take: 5,
       orderBy: { id: 'asc' },
     });
     expect(result).toEqual(categories);
+  });
+
+  it('should apply date filters and custom sorting', async () => {
+    prismaService.category.findMany.mockResolvedValue([]);
+
+    await repository.findAll({
+      filters: {
+        createdAt: {
+          gte: new Date('2026-02-01T00:00:00.000Z'),
+          lte: new Date('2026-02-28T23:59:59.999Z'),
+        },
+        updatedAt: {
+          gte: new Date('2026-02-10T00:00:00.000Z'),
+        },
+      },
+      sort: { field: 'updatedAt', direction: 'desc' },
+    });
+
+    expect(prismaService.category.findMany).toHaveBeenCalledWith({
+      where: {
+        createdAt: {
+          gte: new Date('2026-02-01T00:00:00.000Z'),
+          lte: new Date('2026-02-28T23:59:59.999Z'),
+        },
+        updatedAt: {
+          gte: new Date('2026-02-10T00:00:00.000Z'),
+        },
+      },
+      skip: undefined,
+      take: undefined,
+      orderBy: { updatedAt: 'desc' },
+    });
+  });
+
+  it('should count categories using filters', async () => {
+    prismaService.category.count.mockResolvedValue(7);
+
+    const result = await repository.count({ name: 'Elect' });
+
+    expect(prismaService.category.count).toHaveBeenCalledWith({
+      where: {
+        name: {
+          contains: 'Elect',
+          mode: 'insensitive',
+        },
+      },
+    });
+    expect(result).toBe(7);
   });
 
   it('should return category by id using prisma findUnique', async () => {

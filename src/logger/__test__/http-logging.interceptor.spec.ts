@@ -38,9 +38,9 @@ describe('HttpLoggingInterceptor', () => {
     } as unknown as ExecutionContext;
     const next: CallHandler = { handle: () => of('ok') };
 
-    await expect(lastValueFrom(interceptor.intercept(context, next))).resolves.toBe(
-      'ok',
-    );
+    await expect(
+      lastValueFrom(interceptor.intercept(context, next)),
+    ).resolves.toBe('ok');
     expect(logger.log).not.toHaveBeenCalled();
     expect(logger.warn).not.toHaveBeenCalled();
     expect(logger.error).not.toHaveBeenCalled();

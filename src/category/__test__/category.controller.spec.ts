@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { CategoryController } from '../category.controller';
 import { CategoryService } from '../category.service';
 import { CreateCategoryDto } from '../dto/create-category.dto';
+import { ListCategoryQueryDto } from '../dto/list-category-query.dto';
 import { UpdateCategoryDto } from '../dto/update-category.dto';
 
 describe('CategoryController', () => {
@@ -48,13 +49,28 @@ describe('CategoryController', () => {
   });
 
   it('should delegate findAll to service', async () => {
-    const categories = [{ id: 1, name: 'Electronics' }];
-    categoryService.findAll.mockResolvedValue(categories as never);
+    const query: ListCategoryQueryDto = {
+      page: '2',
+      limit: '5',
+      name: 'Elect',
+    };
+    const paginatedResult = {
+      data: [{ id: 1, name: 'Electronics' }],
+      meta: {
+        page: 2,
+        limit: 5,
+        total: 7,
+        totalPages: 2,
+        hasPreviousPage: true,
+        hasNextPage: false,
+      },
+    };
+    categoryService.findAll.mockResolvedValue(paginatedResult as never);
 
-    const result = await controller.findAll();
+    const result = await controller.findAll(query);
 
-    expect(categoryService.findAll).toHaveBeenCalledTimes(1);
-    expect(result).toEqual(categories);
+    expect(categoryService.findAll).toHaveBeenCalledWith(query);
+    expect(result).toEqual(paginatedResult);
   });
 
   it('should delegate findOne to service', async () => {
