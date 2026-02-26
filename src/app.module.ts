@@ -7,9 +7,10 @@ import { LoggerModule } from './logger/logger.module';
 import { HttpLoggingInterceptor } from './logger/http-logging.interceptor';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuditLogInterceptor } from './prisma/audit-log.interceptor';
+import { ProductModule } from './product/product.module';
 
 @Module({
-  imports: [LoggerModule, PrismaModule, CategoryModule],
+  imports: [LoggerModule, PrismaModule, CategoryModule, ProductModule],
   controllers: [AppController],
   providers: [
     AppService,
