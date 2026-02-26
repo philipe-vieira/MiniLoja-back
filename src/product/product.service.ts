@@ -1,8 +1,11 @@
 import {
+  Inject,
   BadRequestException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import {
   ProductFilters,
   ProductRepository,
@@ -24,10 +27,16 @@ import {
  * Centraliza validações, regras de negócio e orquestração de repositório.
  */
 export class ProductService {
+  private readonly productListKeysIndex = 'product:list:keys';
+  private readonly productItemKeysIndex = 'product:item:keys';
+
   /**
    * @param productRepository Repositório responsável pelo acesso aos dados de produto.
    */
-  constructor(private readonly productRepository: ProductRepository) {}
+  constructor(
+    private readonly productRepository: ProductRepository,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+  ) {}
 
   /**
    * Cria um novo produto após validar e normalizar os campos.
@@ -57,12 +66,16 @@ export class ProductService {
 
     await this.ensureCategoryExists(categoryId);
 
-    return this.productRepository.create({
+    const createdProduct = await this.productRepository.create({
       name,
       description,
       price,
       categoryId,
     });
+
+    await this.invalidateProductCache();
+
+    return createdProduct;
   }
 
   /**
@@ -73,6 +86,12 @@ export class ProductService {
    * @throws BadRequestException Quando qualquer query param é inválido.
    */
   async findAll(query: ListProductQueryDto) {
+    const cacheKey = this.buildProductListCacheKey(query);
+    const cached = await this.cacheManager.get<unknown>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const getAll = parseBoolean(query.get_all, false, 'get_all');
     const page = parsePositiveInt(query.page, 1, 'page');
     const limit = parsePositiveInt(query.limit, 10, 'limit', 100);
@@ -152,7 +171,7 @@ export class ProductService {
     const totalPages =
       effectiveLimit === 0 ? 0 : Math.ceil(total / effectiveLimit);
 
-    return {
+    const response = {
       data,
       meta: {
         page: getAll ? 1 : page,
@@ -165,6 +184,11 @@ export class ProductService {
         sortBy: `${sort.field}:${sort.direction}`,
       },
     };
+
+    await this.cacheManager.set(cacheKey, response);
+    await this.registerCacheKey(this.productListKeysIndex, cacheKey);
+
+    return response;
   }
 
   /**
@@ -175,11 +199,20 @@ export class ProductService {
    * @throws NotFoundException Quando não existe produto com o ID informado.
    */
   async findOne(id: number) {
+    const cacheKey = this.buildProductByIdCacheKey(id);
+    const cached = await this.cacheManager.get<unknown>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const product = await this.productRepository.findById(id);
 
     if (!product) {
       throw new NotFoundException(`Product #${id} not found`);
     }
+
+    await this.cacheManager.set(cacheKey, product);
+    await this.registerCacheKey(this.productItemKeysIndex, cacheKey);
 
     return product;
   }
@@ -230,7 +263,11 @@ export class ProductService {
       return product;
     }
 
-    return this.productRepository.update(id, data);
+    const updatedProduct = await this.productRepository.update(id, data);
+
+    await this.invalidateProductCache();
+
+    return updatedProduct;
   }
 
   /**
@@ -242,7 +279,58 @@ export class ProductService {
    */
   async remove(id: number) {
     await this.findOne(id);
-    return this.productRepository.remove(id);
+    const removedProduct = await this.productRepository.remove(id);
+
+    await this.invalidateProductCache();
+
+    return removedProduct;
+  }
+
+  private buildProductListCacheKey(query: ListProductQueryDto): string {
+    const params = new URLSearchParams();
+
+    for (const [key, value] of Object.entries(query).sort(([a], [b]) =>
+      a.localeCompare(b),
+    )) {
+      if (value === undefined) {
+        continue;
+      }
+
+      params.append(key, value);
+    }
+
+    const suffix = params.toString();
+    return `product:list:${suffix || 'default'}`;
+  }
+
+  private buildProductByIdCacheKey(id: number): string {
+    return `product:item:${id}`;
+  }
+
+  private async registerCacheKey(indexKey: string, key: string) {
+    const currentKeys = (await this.cacheManager.get<string[]>(indexKey)) ?? [];
+
+    if (currentKeys.includes(key)) {
+      return;
+    }
+
+    await this.cacheManager.set(indexKey, [...currentKeys, key]);
+  }
+
+  private async invalidateProductCache() {
+    const [listKeys, itemKeys] = await Promise.all([
+      this.cacheManager.get<string[]>(this.productListKeysIndex),
+      this.cacheManager.get<string[]>(this.productItemKeysIndex),
+    ]);
+
+    const keysToDelete = [
+      ...(listKeys ?? []),
+      ...(itemKeys ?? []),
+      this.productListKeysIndex,
+      this.productItemKeysIndex,
+    ];
+
+    await Promise.all(keysToDelete.map((key) => this.cacheManager.del(key)));
   }
 
   private normalizeDescription(description: string | undefined): string | null {

@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ProductRepository } from '../product.repository';
 import { ProductService } from '../product.service';
@@ -6,6 +7,11 @@ import { ProductService } from '../product.service';
 describe('ProductService', () => {
   let service: ProductService;
   let productRepository: jest.Mocked<ProductRepository>;
+  let cacheManager: {
+    get: jest.Mock;
+    set: jest.Mock;
+    del: jest.Mock;
+  };
 
   beforeEach(async () => {
     const mockProductRepository = {
@@ -17,6 +23,11 @@ describe('ProductService', () => {
       remove: jest.fn(),
       categoryExists: jest.fn(),
     };
+    const mockCacheManager = {
+      get: jest.fn(),
+      set: jest.fn(),
+      del: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -25,11 +36,16 @@ describe('ProductService', () => {
           provide: ProductRepository,
           useValue: mockProductRepository,
         },
+        {
+          provide: CACHE_MANAGER,
+          useValue: mockCacheManager,
+        },
       ],
     }).compile();
 
     service = module.get<ProductService>(ProductService);
     productRepository = module.get(ProductRepository);
+    cacheManager = module.get(CACHE_MANAGER);
   });
 
   it('should create product with normalized values', async () => {
@@ -60,6 +76,9 @@ describe('ProductService', () => {
       price: 299.9,
       categoryId: 1,
     });
+    expect(cacheManager.get).toHaveBeenCalledTimes(2);
+    expect(cacheManager.del).toHaveBeenCalledWith('product:list:keys');
+    expect(cacheManager.del).toHaveBeenCalledWith('product:item:keys');
     expect(result).toEqual(createdProduct);
   });
 
@@ -142,8 +161,9 @@ describe('ProductService', () => {
     productRepository.findAll.mockResolvedValue(products);
     productRepository.count.mockResolvedValue(1);
 
-    const result = await service.findAll({});
+    const result = (await service.findAll({})) as any;
 
+    expect(cacheManager.get).toHaveBeenCalledWith('product:list:default');
     expect(productRepository.findAll).toHaveBeenCalledWith({
       skip: 0,
       take: 10,
@@ -161,6 +181,33 @@ describe('ProductService', () => {
       getAll: false,
       sortBy: 'id:asc',
     });
+    expect(cacheManager.set).toHaveBeenCalledWith(
+      'product:list:default',
+      result,
+    );
+  });
+
+  it('should return cached list when available', async () => {
+    const cachedResult = {
+      data: [{ id: 1, name: 'Keyboard' }],
+      meta: {
+        page: 1,
+        limit: 10,
+        total: 1,
+        totalPages: 1,
+        hasPreviousPage: false,
+        hasNextPage: false,
+        getAll: false,
+        sortBy: 'id:asc',
+      },
+    };
+    cacheManager.get.mockResolvedValue(cachedResult);
+
+    const result = await service.findAll({});
+
+    expect(cacheManager.get).toHaveBeenCalledWith('product:list:default');
+    expect(productRepository.findAll).not.toHaveBeenCalled();
+    expect(result).toEqual(cachedResult);
   });
 
   it('should apply pagination and filters when listing products', async () => {
@@ -178,7 +225,7 @@ describe('ProductService', () => {
     productRepository.findAll.mockResolvedValue(products);
     productRepository.count.mockResolvedValue(21);
 
-    const result = await service.findAll({
+    const result = (await service.findAll({
       page: '2',
       limit: '10',
       id: '8',
@@ -186,7 +233,7 @@ describe('ProductService', () => {
       description: 'rgb',
       categoryId: '2',
       price_between: '100,500',
-    });
+    })) as any;
 
     expect(productRepository.findAll).toHaveBeenCalledWith({
       skip: 10,
@@ -239,10 +286,10 @@ describe('ProductService', () => {
     productRepository.findAll.mockResolvedValue(products);
     productRepository.count.mockResolvedValue(2);
 
-    const result = await service.findAll({
+    const result = (await service.findAll({
       get_all: 'true',
       sort_by: 'price:desc',
-    });
+    })) as any;
 
     expect(productRepository.findAll).toHaveBeenCalledWith({
       skip: undefined,
@@ -336,8 +383,24 @@ describe('ProductService', () => {
 
     const result = await service.findOne(7);
 
+    expect(cacheManager.get).toHaveBeenCalledWith('product:item:7');
     expect(productRepository.findById).toHaveBeenCalledWith(7);
+    expect(cacheManager.set).toHaveBeenCalledWith('product:item:7', product);
     expect(result).toEqual(product);
+  });
+
+  it('should return cached product by id when available', async () => {
+    const cachedProduct = {
+      id: 7,
+      name: 'Mouse',
+    };
+    cacheManager.get.mockResolvedValue(cachedProduct);
+
+    const result = await service.findOne(7);
+
+    expect(cacheManager.get).toHaveBeenCalledWith('product:item:7');
+    expect(productRepository.findById).not.toHaveBeenCalled();
+    expect(result).toEqual(cachedProduct);
   });
 
   it('should throw NotFoundException when product does not exist', async () => {
