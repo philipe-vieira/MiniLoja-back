@@ -20,6 +20,7 @@ import {
   parsePositiveInt,
   parseSortBy,
 } from '../utils/query-parser.util';
+import { AppLoggerService } from '../logger/app-logger.service';
 
 @Injectable()
 /**
@@ -36,6 +37,7 @@ export class ProductService {
   constructor(
     private readonly productRepository: ProductRepository,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+    private readonly logger: AppLoggerService,
   ) {}
 
   /**
@@ -73,6 +75,7 @@ export class ProductService {
       categoryId,
     });
 
+    this.logger.log('Invalidating product cache after create', 'ProductCache');
     await this.invalidateProductCache();
 
     return createdProduct;
@@ -89,8 +92,10 @@ export class ProductService {
     const cacheKey = this.buildProductListCacheKey(query);
     const cached = await this.cacheManager.get<unknown>(cacheKey);
     if (cached) {
+      this.logger.debug(`Cache hit: ${cacheKey}`, 'ProductCache');
       return cached;
     }
+    this.logger.debug(`Cache miss: ${cacheKey}`, 'ProductCache');
 
     const getAll = parseBoolean(query.get_all, false, 'get_all');
     const page = parsePositiveInt(query.page, 1, 'page');
@@ -186,6 +191,7 @@ export class ProductService {
     };
 
     await this.cacheManager.set(cacheKey, response);
+    this.logger.debug(`Cache save: ${cacheKey}`, 'ProductCache');
     await this.registerCacheKey(this.productListKeysIndex, cacheKey);
 
     return response;
@@ -202,8 +208,10 @@ export class ProductService {
     const cacheKey = this.buildProductByIdCacheKey(id);
     const cached = await this.cacheManager.get<unknown>(cacheKey);
     if (cached) {
+      this.logger.debug(`Cache hit: ${cacheKey}`, 'ProductCache');
       return cached;
     }
+    this.logger.debug(`Cache miss: ${cacheKey}`, 'ProductCache');
 
     const product = await this.productRepository.findById(id);
 
@@ -212,6 +220,7 @@ export class ProductService {
     }
 
     await this.cacheManager.set(cacheKey, product);
+    this.logger.debug(`Cache save: ${cacheKey}`, 'ProductCache');
     await this.registerCacheKey(this.productItemKeysIndex, cacheKey);
 
     return product;
@@ -265,6 +274,7 @@ export class ProductService {
 
     const updatedProduct = await this.productRepository.update(id, data);
 
+    this.logger.log('Invalidating product cache after update', 'ProductCache');
     await this.invalidateProductCache();
 
     return updatedProduct;
@@ -281,6 +291,7 @@ export class ProductService {
     await this.findOne(id);
     const removedProduct = await this.productRepository.remove(id);
 
+    this.logger.log('Invalidating product cache after remove', 'ProductCache');
     await this.invalidateProductCache();
 
     return removedProduct;
@@ -315,6 +326,7 @@ export class ProductService {
     }
 
     await this.cacheManager.set(indexKey, [...currentKeys, key]);
+    this.logger.debug(`Cache index update: ${indexKey}`, 'ProductCache');
   }
 
   private async invalidateProductCache() {
@@ -330,6 +342,10 @@ export class ProductService {
       this.productItemKeysIndex,
     ];
 
+    this.logger.log(
+      `Cache invalidate keys: ${keysToDelete.length}`,
+      'ProductCache',
+    );
     await Promise.all(keysToDelete.map((key) => this.cacheManager.del(key)));
   }
 

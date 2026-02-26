@@ -1,6 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Test, TestingModule } from '@nestjs/testing';
+import { AppLoggerService } from '../../logger/app-logger.service';
 import { ProductRepository } from '../product.repository';
 import { ProductService } from '../product.service';
 
@@ -11,6 +12,10 @@ describe('ProductService', () => {
     get: jest.Mock;
     set: jest.Mock;
     del: jest.Mock;
+  };
+  let logger: {
+    log: jest.Mock;
+    debug: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -28,6 +33,10 @@ describe('ProductService', () => {
       set: jest.fn(),
       del: jest.fn(),
     };
+    const mockLogger = {
+      log: jest.fn(),
+      debug: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -40,12 +49,17 @@ describe('ProductService', () => {
           provide: CACHE_MANAGER,
           useValue: mockCacheManager,
         },
+        {
+          provide: AppLoggerService,
+          useValue: mockLogger,
+        },
       ],
     }).compile();
 
     service = module.get<ProductService>(ProductService);
     productRepository = module.get(ProductRepository);
     cacheManager = module.get(CACHE_MANAGER);
+    logger = module.get(AppLoggerService);
   });
 
   it('should create product with normalized values', async () => {
@@ -79,6 +93,10 @@ describe('ProductService', () => {
     expect(cacheManager.get).toHaveBeenCalledTimes(2);
     expect(cacheManager.del).toHaveBeenCalledWith('product:list:keys');
     expect(cacheManager.del).toHaveBeenCalledWith('product:item:keys');
+    expect(logger.log).toHaveBeenCalledWith(
+      'Invalidating product cache after create',
+      'ProductCache',
+    );
     expect(result).toEqual(createdProduct);
   });
 
