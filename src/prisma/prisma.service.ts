@@ -28,12 +28,6 @@ type PrismaClientLike = {
   [delegate: string]: any;
 };
 
-// Contrato mínimo do pool de conexões PostgreSQL.
-type PoolLike = {
-  // Encerra o pool de conexões.
-  end: () => Promise<void>;
-};
-
 // Operacoes de mutacao que devem gerar trilha de auditoria.
 type MutationOperation =
   | 'create'
@@ -50,6 +44,12 @@ type QueryExtensionParams = {
   operation: string;
   args?: Record<string, any>;
   query: (args?: Record<string, any>) => Promise<unknown>;
+};
+
+// Contrato mínimo do pool de conexões PostgreSQL.
+type PoolLike = {
+  // Encerra o pool de conexões.
+  end: () => Promise<void>;
 };
 
 @Injectable()
