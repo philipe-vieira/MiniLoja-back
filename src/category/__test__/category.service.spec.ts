@@ -58,7 +58,12 @@ describe('CategoryService', () => {
 
   it('should return all categories', async () => {
     const categories = [
-      { id: 1, name: 'Electronics', createdAt: new Date(), updatedAt: new Date() },
+      {
+        id: 1,
+        name: 'Electronics',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
       { id: 2, name: 'Books', createdAt: new Date(), updatedAt: new Date() },
     ];
     categoryRepository.findAll.mockResolvedValue(categories);
@@ -88,7 +93,9 @@ describe('CategoryService', () => {
     categoryRepository.findById.mockResolvedValue(null);
 
     await expect(service.findOne(999)).rejects.toThrow(NotFoundException);
-    await expect(service.findOne(999)).rejects.toThrow('Category #999 not found');
+    await expect(service.findOne(999)).rejects.toThrow(
+      'Category #999 not found',
+    );
   });
 
   it('should update category with trimmed name', async () => {

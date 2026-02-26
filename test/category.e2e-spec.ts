@@ -150,7 +150,9 @@ describe('CategoryModule (e2e)', () => {
   it('DELETE /category/:id should return 404 when already removed', async () => {
     const categoryId = await createCategory();
 
-    await request(app.getHttpServer()).delete(`/category/${categoryId}`).expect(200);
+    await request(app.getHttpServer())
+      .delete(`/category/${categoryId}`)
+      .expect(200);
 
     await request(app.getHttpServer())
       .delete(`/category/${categoryId}`)
