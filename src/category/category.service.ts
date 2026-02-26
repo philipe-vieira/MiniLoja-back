@@ -3,14 +3,16 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  CategoryFilters,
-  CategoryRepository,
-  CategorySort,
-} from './category.repository';
+import { CategoryFilters, CategoryRepository } from './category.repository';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { ListCategoryQueryDto } from './dto/list-category-query.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
+import {
+  parseBoolean,
+  parseDateRange,
+  parsePositiveInt,
+  parseSortBy,
+} from '../utils/query-parser.util';
 
 @Injectable()
 /**
@@ -48,15 +50,19 @@ export class CategoryService {
    * @throws BadRequestException Quando qualquer query param é inválido.
    */
   async findAll(query: ListCategoryQueryDto) {
-    const getAll = this.parseBoolean(query.get_all, false, 'get_all');
-    const page = this.parsePositiveInt(query.page, 1, 'page');
-    const limit = this.parsePositiveInt(query.limit, 10, 'limit', 100);
-    const sort = this.parseSortBy(query.sort_by);
+    const getAll = parseBoolean(query.get_all, false, 'get_all');
+    const page = parsePositiveInt(query.page, 1, 'page');
+    const limit = parsePositiveInt(query.limit, 10, 'limit', 100);
+    const sort = parseSortBy(query.sort_by, {
+      validFields: ['id', 'name', 'createdAt', 'updatedAt'],
+      defaultField: 'id',
+      defaultDirection: 'asc',
+    });
 
     const filters: CategoryFilters = {};
 
     if (query.id !== undefined) {
-      filters.id = this.parsePositiveInt(query.id, 1, 'id');
+      filters.id = parsePositiveInt(query.id, 1, 'id');
     }
 
     if (query.name !== undefined) {
@@ -67,7 +73,7 @@ export class CategoryService {
       filters.name = name;
     }
 
-    const createdAtFilter = this.parseDateRange({
+    const createdAtFilter = parseDateRange({
       gte: query.createdAt_gte,
       lte: query.createdAt_lte,
       between: query.createdAt_between,
@@ -77,7 +83,7 @@ export class CategoryService {
       filters.createdAt = createdAtFilter;
     }
 
-    const updatedAtFilter = this.parseDateRange({
+    const updatedAtFilter = parseDateRange({
       gte: query.updatedAt_gte,
       lte: query.updatedAt_lte,
       between: query.updatedAt_between,
@@ -166,191 +172,5 @@ export class CategoryService {
   async remove(id: number) {
     await this.findOne(id);
     return this.categoryRepository.remove(id);
-  }
-
-  /**
-   * Converte string para inteiro positivo com fallback e limite opcional.
-   *
-   * @param value Valor de entrada.
-   * @param fallback Valor padrão quando não informado.
-   * @param fieldName Nome lógico do campo para mensagens de erro.
-   * @param max Valor máximo permitido.
-   * @returns Inteiro positivo validado.
-   * @throws BadRequestException Quando o valor é inválido.
-   */
-  private parsePositiveInt(
-    value: string | undefined,
-    fallback: number,
-    fieldName: string,
-    max?: number,
-  ): number {
-    if (value === undefined) {
-      return fallback;
-    }
-
-    const parsed = Number.parseInt(value, 10);
-    if (Number.isNaN(parsed) || parsed < 1) {
-      throw new BadRequestException(`${fieldName} must be a positive integer`);
-    }
-
-    if (max !== undefined && parsed > max) {
-      throw new BadRequestException(`${fieldName} must be <= ${max}`);
-    }
-
-    return parsed;
-  }
-
-  /**
-   * Converte string para boolean aceitando aliases comuns.
-   *
-   * Valores aceitos:
-   * - true: `true`, `1`, `yes`
-   * - false: `false`, `0`, `no`
-   *
-   * @param value Valor de entrada.
-   * @param fallback Valor padrão quando não informado.
-   * @param fieldName Nome lógico do campo para mensagens de erro.
-   * @returns Boolean validado.
-   * @throws BadRequestException Quando o valor não representa boolean.
-   */
-  private parseBoolean(
-    value: string | undefined,
-    fallback: boolean,
-    fieldName: string,
-  ): boolean {
-    if (value === undefined) {
-      return fallback;
-    }
-
-    const normalized = value.trim().toLowerCase();
-    if (['true', '1', 'yes'].includes(normalized)) {
-      return true;
-    }
-
-    if (['false', '0', 'no'].includes(normalized)) {
-      return false;
-    }
-
-    throw new BadRequestException(`${fieldName} must be a boolean`);
-  }
-
-  /**
-   * Interpreta o parâmetro `sort_by` no formato `campo:direcao`.
-   *
-   * @param sortBy Valor bruto de ordenação.
-   * @returns Estrutura de ordenação normalizada.
-   * @throws BadRequestException Quando campo ou direção são inválidos.
-   */
-  private parseSortBy(sortBy: string | undefined): CategorySort {
-    if (!sortBy) {
-      return { field: 'id', direction: 'asc' };
-    }
-
-    const [rawField, rawDirection] = sortBy.split(':');
-    const field = rawField?.trim() as CategorySort['field'] | undefined;
-    const direction = (rawDirection?.trim() || 'asc') as
-      | CategorySort['direction']
-      | undefined;
-
-    const validFields: CategorySort['field'][] = [
-      'id',
-      'name',
-      'createdAt',
-      'updatedAt',
-    ];
-
-    if (!field || !validFields.includes(field)) {
-      throw new BadRequestException(
-        `sort_by field must be one of: ${validFields.join(',')}`,
-      );
-    }
-
-    if (!direction || !['asc', 'desc'].includes(direction)) {
-      throw new BadRequestException('sort_by direction must be asc or desc');
-    }
-
-    return { field, direction };
-  }
-
-  /**
-   * Monta um range de datas a partir de `gte/lte` ou `between`.
-   *
-   * Regras:
-   * - `between` não pode ser combinado com `gte/lte`
-   * - `between` deve ter formato `start,end`
-   * - início deve ser <= fim
-   *
-   * @param params Parâmetros de filtro de data.
-   * @returns Range de datas ou `undefined` quando não informado.
-   * @throws BadRequestException Quando os valores estão em formato inválido.
-   */
-  private parseDateRange(params: {
-    gte?: string;
-    lte?: string;
-    between?: string;
-    fieldName: string;
-  }): { gte?: Date; lte?: Date } | undefined {
-    const { gte, lte, between, fieldName } = params;
-
-    if (between !== undefined && (gte !== undefined || lte !== undefined)) {
-      throw new BadRequestException(
-        `${fieldName} between cannot be combined with gte/lte`,
-      );
-    }
-
-    if (between !== undefined) {
-      const values = between.split(',').map((item) => item.trim());
-      if (values.length !== 2 || !values[0] || !values[1]) {
-        throw new BadRequestException(
-          `${fieldName}_between must be in format start,end`,
-        );
-      }
-
-      const start = this.parseIsoDate(values[0], `${fieldName}_between start`);
-      const end = this.parseIsoDate(values[1], `${fieldName}_between end`);
-
-      if (start > end) {
-        throw new BadRequestException(
-          `${fieldName}_between start must be <= end`,
-        );
-      }
-
-      return { gte: start, lte: end };
-    }
-
-    const result: { gte?: Date; lte?: Date } = {};
-
-    if (gte !== undefined) {
-      result.gte = this.parseIsoDate(gte, `${fieldName}_gte`);
-    }
-
-    if (lte !== undefined) {
-      result.lte = this.parseIsoDate(lte, `${fieldName}_lte`);
-    }
-
-    if (result.gte && result.lte && result.gte > result.lte) {
-      throw new BadRequestException(
-        `${fieldName}_gte must be <= ${fieldName}_lte`,
-      );
-    }
-
-    return result.gte || result.lte ? result : undefined;
-  }
-
-  /**
-   * Converte string para `Date` validando formato.
-   *
-   * @param value Data em formato string.
-   * @param fieldName Nome lógico do campo para mensagens de erro.
-   * @returns Instância de `Date` válida.
-   * @throws BadRequestException Quando não é uma data válida.
-   */
-  private parseIsoDate(value: string, fieldName: string): Date {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-      throw new BadRequestException(`${fieldName} must be a valid ISO date`);
-    }
-
-    return date;
   }
 }
