@@ -9,6 +9,13 @@ export type ParsedSort<TField extends string> = {
 
 /**
  * Converte string para inteiro positivo com fallback e limite opcional.
+ *
+ * @param value Valor de entrada.
+ * @param fallback Valor padrão quando não informado.
+ * @param fieldName Nome lógico do campo para mensagens de erro.
+ * @param max Valor máximo permitido.
+ * @returns Inteiro positivo validado.
+ * @throws BadRequestException Quando o valor é inválido.
  */
 export function parsePositiveInt(
   value: string | undefined,
@@ -34,6 +41,16 @@ export function parsePositiveInt(
 
 /**
  * Converte string para boolean aceitando aliases comuns.
+ *
+ * Valores aceitos:
+ * - true: `true`, `1`, `yes`
+ * - false: `false`, `0`, `no`
+ *
+ * @param value Valor de entrada.
+ * @param fallback Valor padrão quando não informado.
+ * @param fieldName Nome lógico do campo para mensagens de erro.
+ * @returns Boolean validado.
+ * @throws BadRequestException Quando o valor não representa boolean.
  */
 export function parseBoolean(
   value: string | undefined,
@@ -57,7 +74,11 @@ export function parseBoolean(
 }
 
 /**
- * Interpreta `sort_by` no formato `campo:direcao`.
+ * Interpreta o parâmetro `sort_by` no formato `campo:direcao`.
+ *
+ * @param sortBy Valor bruto de ordenação.
+ * @returns Estrutura de ordenação normalizada.
+ * @throws BadRequestException Quando campo ou direção são inválidos.
  */
 export function parseSortBy<TField extends string>(
   sortBy: string | undefined,
@@ -93,7 +114,16 @@ export function parseSortBy<TField extends string>(
 }
 
 /**
- * Monta range de datas com `gte/lte` ou `between`.
+ * Monta um range de datas a partir de `gte/lte` ou `between`.
+ *
+ * Regras:
+ * - `between` não pode ser combinado com `gte/lte`
+ * - `between` deve ter formato `start,end`
+ * - início deve ser <= fim
+ *
+ * @param params Parâmetros de filtro de data.
+ * @returns Range de datas ou `undefined` quando não informado.
+ * @throws BadRequestException Quando os valores estão em formato inválido.
  */
 export function parseDateRange(params: {
   gte?: string;
@@ -149,7 +179,12 @@ export function parseDateRange(params: {
 }
 
 /**
- * Converte string para Date validando formato.
+ * Converte string para `Date` validando formato.
+ *
+ * @param value Data em formato string.
+ * @param fieldName Nome lógico do campo para mensagens de erro.
+ * @returns Instância de `Date` válida.
+ * @throws BadRequestException Quando não é uma data válida.
  */
 export function parseIsoDate(value: string, fieldName: string): Date {
   const date = new Date(value);
